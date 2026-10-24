@@ -2,6 +2,10 @@
 
 **Pinned EffectStream revision:** `5604043213df01beccebe253fbb479e387a514bb` (`v-next`, version `0.200.6`).
 
+**Integration commits:** `3adc2a511f5c1edeaa78821c14d17f3b1174cb52` and `e5e9c0e5` on `feat/ckb-native-sync`.
+
+**Connector dependency commit:** `b8353e5` on `feat/ckb-effectstream-sync` (bounded observation API and persistence design).
+
 ## Configuration and discovery
 
 EffectStream validates configured networks and sync protocols through the `networkTypes`, `parallelSyncProtocolTypes`, and `syncProtocolCommonResponse` maps in `packages/effectstream-sdk/config`. `SyncProtocolToNetwork` ties each protocol to a network type. `genSyncProtocols` in `packages/node-sdk/sync` explicitly constructs the fetcher and restored state. CKB will be one parallel RPC protocol with a strict network schema; missing or unsupported network values will be rejected by these existing discriminated unions and the factory's unsupported-network error.

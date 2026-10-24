@@ -1,6 +1,6 @@
 # CKB Multichain Connector implementation plan
 
-**Status as of 2026-10-24:** Gate 0 approved. Milestones 0 and 1 are complete. Milestone 2 read-only RPC observation is implemented and fixture-verified; live-node integration has not been run. Native EffectStream integration and the CKB-to-EVM demonstration remain future work. The MVP cell event contract is recorded in [`event-contract.md`](./event-contract.md).
+**Status as of 2026-10-24:** Milestones 0–2 are complete as described below. A native CKB integration is implemented in a separate worktree based on the pinned EffectStream revision and is fixture-verified. The Milestone 3 acceptance gate remains open because the upstream patch currently depends on a sibling local connector checkout, the connector revision has not been published or pushed, no live CKB node test has run, and the EVM E2E runner could not start without Foundry. The EVM destination demonstration remains Milestone 4. The MVP cell event contract is recorded in [`event-contract.md`](./event-contract.md).
 
 ## Milestone 0 — Repository and environment audit
 
@@ -36,9 +36,11 @@ Implement CKB network identity and JSON-RPC transport, block/header and transact
 
 ### Milestone 3 — EffectStream integration
 
-If approved, implement the smallest changes in the upstream config schema/network mapping, primitive IO type, fetcher/state, sync protocol union/factory/export, and focused tests. Keep these changes isolated and suitable for upstream review. Use EffectStream's persisted resume pages and state-machine payload path rather than a second queue.
+**Implemented in the separate `feat/ckb-native-sync` worktree at `e5e9c0e5` (implementation `3adc2a51`), based on `5604043213df01beccebe253fbb479e387a514bb`.** The connector dependency is on `feat/ckb-effectstream-sync` at `b8353e5`. CKB has validated network/protocol schemas, a native fetcher/state, explicit factory registration, protocol primitive IO, runtime block inspection, immutable network snapshots, and fixture tests. The adapter uses the connector observer and stores its bounded cursor with each block-accurate native resume marker. A checkpoint replacement is detected and fails closed, including empty blocks; because upstream has no rollback mechanism, committed state requires operator recovery after a deep reorganization.
 
-**Acceptance:** an actual CKB-observed event reaches the existing EffectStream processing path; restart/replay tests show no duplicate processing; upstream package tests pass for touched modules.
+**Verification:** focused CKB configuration, factory/fetcher/state/restart/failure/reorg, and runtime snapshot tests pass. `bun test ./packages` reports 608 passed, 4 skipped, 4 failures, and 2 errors; the pinned baseline was 602 passed with the same 4 failures and 2 errors. The six added CKB tests account for the increase in passing tests. The config package's actual `bun run typecheck` passes its baseline-aware checker. The repo has no lint script or sync package typecheck script. No live CKB node was used. EVM E2E could not start because `forge` was missing from PATH.
+
+**Acceptance gate:** still open until the bounded observer dependency is available as an immutable package revision and live CKB behavior is verified. See [`milestone-3-design.md`](./milestone-3-design.md) and the upstream worktree documentation for the exact local layout and reproduction commands.
 
 ### Milestone 4 — Local source-to-EVM demonstration
 
