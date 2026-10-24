@@ -54,11 +54,11 @@ export class ReadOnlyCkbObserver {
     return structuredClone(this.cursor);
   }
 
-  async observeAvailable(): Promise<CkbObservationBatch> {
+  async observeAvailable(throughHeight?: string): Promise<CkbObservationBatch> {
     const cursorBefore = this.getCursor();
     const eventsBefore = new Map(this.knownEvents);
     try {
-      return await this.scanAvailable();
+      return await this.scanAvailable(throughHeight);
     } catch (error) {
       this.cursor = cursorBefore;
       this.knownEvents.clear();
@@ -67,7 +67,7 @@ export class ReadOnlyCkbObserver {
     }
   }
 
-  private async scanAvailable(): Promise<CkbObservationBatch> {
+  private async scanAvailable(throughHeight?: string): Promise<CkbObservationBatch> {
     const genesis = await this.rpc.call<unknown>("get_block_by_number", ["0x0"]);
     const genesisBlock = parseBlock(genesis);
     if (genesisBlock.hash !== this.config.genesisBlockHash) {
@@ -77,7 +77,15 @@ export class ReadOnlyCkbObserver {
       );
     }
     const tip = parseHeader(await this.rpc.call<unknown>("get_tip_header", []));
-    const eligibleTip = tip.height - BigInt(this.config.confirmationDepth);
+    const confirmationTip = tip.height - BigInt(this.config.confirmationDepth);
+    if (throughHeight !== undefined && !/^(0|[1-9][0-9]*)$/.test(throughHeight)) {
+      throw new CkbConnectorError(
+        "CURSOR_INVALID",
+        "throughHeight must be an unsigned decimal integer.",
+      );
+    }
+    const requestedTip = throughHeight === undefined ? confirmationTip : BigInt(throughHeight);
+    const eligibleTip = requestedTip < confirmationTip ? requestedTip : confirmationTip;
     const invalidated = await this.reconcile(tip.height);
     if (eligibleTip < BigInt(this.config.startBlockHeight)) {
       const ids = [...new Set([...this.cursor.pendingInvalidationIds, ...invalidated])];

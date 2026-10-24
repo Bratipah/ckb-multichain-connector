@@ -87,6 +87,21 @@ describe("read-only RPC and CKB parsing", () => {
     expect((await observer.observeAvailable()).events).toHaveLength(0);
   });
 
+  test("bounds an observation at the requested eligible height", async () => {
+    const rpc = fakeFetch({
+      0: block(0, "0"),
+      1: block(1, "1", [tx("b")]),
+      2: block(2, "2", [tx("c")]),
+    });
+    const observer = new ReadOnlyCkbObserver(config, { fetch: rpc.fetcher });
+    const first = await observer.observeAvailable("1");
+    expect(first.events).toHaveLength(2);
+    expect(first.cursor.lastProcessed?.height).toBe("1");
+    const second = await observer.observeAvailable("2");
+    expect(second.events).toHaveLength(2);
+    expect(second.cursor.lastProcessed?.height).toBe("2");
+  });
+
   test("reports orphaned IDs and replays replacement blocks after restart", async () => {
     const rpc = fakeFetch({ 0: block(0, "0"), 1: block(1, "1", [tx("b")]) });
     const original = await new ReadOnlyCkbObserver(config, {
