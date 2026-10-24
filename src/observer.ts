@@ -85,7 +85,7 @@ export class ReadOnlyCkbObserver {
       );
     }
     const requestedTip = throughHeight === undefined ? confirmationTip : BigInt(throughHeight);
-    const eligibleTip = requestedTip < confirmationTip ? requestedTip : confirmationTip;
+    const eligibleTip = minBigInt(requestedTip, confirmationTip);
     const invalidated = await this.reconcile(tip.height);
     if (eligibleTip < BigInt(this.config.startBlockHeight)) {
       const ids = [...new Set([...this.cursor.pendingInvalidationIds, ...invalidated])];
@@ -412,6 +412,11 @@ function isHash(value: unknown): value is CkbHash {
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function minBigInt(a: bigint, b: bigint): bigint {
+  if (a < b) return a;
+  return b;
 }
 function isCkbEvent(value: unknown): value is CkbCellCreatedEventV1 {
   if (
