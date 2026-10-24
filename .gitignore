@@ -1,0 +1,35 @@
+node_modules/
+dist/
+coverage/
+build/
+target/
+.cache/
+.turbo/
+*.log
+*.log.*
+
+.env
+.env.*
+!.env.example
+
+# Local CKB / OffCKB node data and state
+.offckb/
+offckb/
+ckb-data/
+data/
+*.sqlite
+*.sqlite-*
+*.db
+
+# Credentials and private key material
+credentials/
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+*.keystore
+*.jks
+*.secret
+
+.DS_Store
