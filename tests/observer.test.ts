@@ -87,6 +87,29 @@ describe("read-only RPC and CKB parsing", () => {
     expect((await observer.observeAvailable()).events).toHaveLength(0);
   });
 
+  test("parses flattened transactions returned by get_block_by_number", async () => {
+    const { inner, ...flatTransaction } = tx("b");
+    const rpc = fakeFetch({
+      0: block(0, "0"),
+      1: block(1, "1", [{ ...flatTransaction, ...inner }]),
+    });
+    const result = await new ReadOnlyCkbObserver(config, { fetch: rpc.fetcher }).observeAvailable();
+    expect(result.events).toHaveLength(2);
+    expect(result.events[0]?.source.transactionHash).toBe(hash("b"));
+    expect(result.cursor.lastProcessed?.height).toBe("1");
+  });
+
+  test("rejects flattened transactions with inconsistent output data", async () => {
+    const { inner, ...flatTransaction } = tx("b");
+    const rpc = fakeFetch({
+      0: block(0, "0"),
+      1: block(1, "1", [{ ...flatTransaction, ...inner, outputs_data: ["0x"] }]),
+    });
+    const observer = new ReadOnlyCkbObserver(config, { fetch: rpc.fetcher });
+    await expect(observer.observeAvailable()).rejects.toBeInstanceOf(CkbConnectorError);
+    expect(observer.getCursor().lastProcessed).toBeUndefined();
+  });
+
   test("bounds an observation at the requested eligible height", async () => {
     const rpc = fakeFetch({
       0: block(0, "0"),

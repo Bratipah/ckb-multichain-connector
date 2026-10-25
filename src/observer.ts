@@ -346,18 +346,22 @@ function parseTransaction(value: unknown): {
   outputs: Record<string, unknown>[];
   outputsData: unknown[];
 } {
+  // CKB's get_block_by_number returns transactions with outputs directly on
+  // the transaction object. Accept the `inner` wrapper as well for callers
+  // that provide transaction-pool style values.
+  const raw = isRecord(value) && isRecord(value.inner) ? value.inner : value;
   if (
     !isRecord(value) ||
     !isHash(value.hash) ||
-    !isRecord(value.inner) ||
-    !Array.isArray(value.inner.outputs) ||
-    !Array.isArray(value.inner.outputs_data) ||
-    value.inner.outputs.length !== value.inner.outputs_data.length
+    !isRecord(raw) ||
+    !Array.isArray(raw.outputs) ||
+    !Array.isArray(raw.outputs_data) ||
+    raw.outputs.length !== raw.outputs_data.length
   )
     invalidResponse(
       "Transaction response is incomplete or has mismatched outputs and outputs_data.",
     );
-  const outputs = value.inner.outputs.map((item) => {
+  const outputs = raw.outputs.map((item) => {
     if (!isRecord(item)) invalidResponse("Transaction output is malformed.");
     parseHexQuantity(item.capacity, "capacity");
     parseScript(item.lock as Record<string, unknown>);
@@ -365,11 +369,11 @@ function parseTransaction(value: unknown): {
       parseScript(item.type as Record<string, unknown>);
     return item;
   });
-  for (const data of value.inner.outputs_data) {
+  for (const data of raw.outputs_data) {
     if (typeof data !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(data))
       invalidResponse("Output data is malformed.");
   }
-  return { hash: value.hash, outputs, outputsData: value.inner.outputs_data };
+  return { hash: value.hash, outputs, outputsData: raw.outputs_data };
 }
 function parseScript(value: Record<string, unknown>): CkbScript {
   if (
