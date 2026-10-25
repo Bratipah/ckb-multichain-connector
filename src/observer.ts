@@ -54,11 +54,11 @@ export class ReadOnlyCkbObserver {
     return structuredClone(this.cursor);
   }
 
-  async observeAvailable(): Promise<CkbObservationBatch> {
+  async observeAvailable(throughHeight?: string): Promise<CkbObservationBatch> {
     const cursorBefore = this.getCursor();
     const eventsBefore = new Map(this.knownEvents);
     try {
-      return await this.scanAvailable();
+      return await this.scanAvailable(throughHeight);
     } catch (error) {
       this.cursor = cursorBefore;
       this.knownEvents.clear();
@@ -67,7 +67,7 @@ export class ReadOnlyCkbObserver {
     }
   }
 
-  private async scanAvailable(): Promise<CkbObservationBatch> {
+  private async scanAvailable(throughHeight?: string): Promise<CkbObservationBatch> {
     const genesis = await this.rpc.call<unknown>("get_block_by_number", ["0x0"]);
     const genesisBlock = parseBlock(genesis);
     if (genesisBlock.hash !== this.config.genesisBlockHash) {
@@ -77,7 +77,15 @@ export class ReadOnlyCkbObserver {
       );
     }
     const tip = parseHeader(await this.rpc.call<unknown>("get_tip_header", []));
-    const eligibleTip = tip.height - BigInt(this.config.confirmationDepth);
+    const confirmationTip = tip.height - BigInt(this.config.confirmationDepth);
+    if (throughHeight !== undefined && !/^(0|[1-9][0-9]*)$/.test(throughHeight)) {
+      throw new CkbConnectorError(
+        "CURSOR_INVALID",
+        "throughHeight must be an unsigned decimal integer.",
+      );
+    }
+    const requestedTip = throughHeight === undefined ? confirmationTip : BigInt(throughHeight);
+    const eligibleTip = minBigInt(requestedTip, confirmationTip);
     const invalidated = await this.reconcile(tip.height);
     if (eligibleTip < BigInt(this.config.startBlockHeight)) {
       const ids = [...new Set([...this.cursor.pendingInvalidationIds, ...invalidated])];
@@ -338,18 +346,22 @@ function parseTransaction(value: unknown): {
   outputs: Record<string, unknown>[];
   outputsData: unknown[];
 } {
+  // CKB's get_block_by_number returns transactions with outputs directly on
+  // the transaction object. Accept the `inner` wrapper as well for callers
+  // that provide transaction-pool style values.
+  const raw = isRecord(value) && isRecord(value.inner) ? value.inner : value;
   if (
     !isRecord(value) ||
     !isHash(value.hash) ||
-    !isRecord(value.inner) ||
-    !Array.isArray(value.inner.outputs) ||
-    !Array.isArray(value.inner.outputs_data) ||
-    value.inner.outputs.length !== value.inner.outputs_data.length
+    !isRecord(raw) ||
+    !Array.isArray(raw.outputs) ||
+    !Array.isArray(raw.outputs_data) ||
+    raw.outputs.length !== raw.outputs_data.length
   )
     invalidResponse(
       "Transaction response is incomplete or has mismatched outputs and outputs_data.",
     );
-  const outputs = value.inner.outputs.map((item) => {
+  const outputs = raw.outputs.map((item) => {
     if (!isRecord(item)) invalidResponse("Transaction output is malformed.");
     parseHexQuantity(item.capacity, "capacity");
     parseScript(item.lock as Record<string, unknown>);
@@ -357,11 +369,11 @@ function parseTransaction(value: unknown): {
       parseScript(item.type as Record<string, unknown>);
     return item;
   });
-  for (const data of value.inner.outputs_data) {
+  for (const data of raw.outputs_data) {
     if (typeof data !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(data))
       invalidResponse("Output data is malformed.");
   }
-  return { hash: value.hash, outputs, outputsData: value.inner.outputs_data };
+  return { hash: value.hash, outputs, outputsData: raw.outputs_data };
 }
 function parseScript(value: Record<string, unknown>): CkbScript {
   if (
@@ -404,6 +416,11 @@ function isHash(value: unknown): value is CkbHash {
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function minBigInt(a: bigint, b: bigint): bigint {
+  if (a < b) return a;
+  return b;
 }
 function isCkbEvent(value: unknown): value is CkbCellCreatedEventV1 {
   if (
