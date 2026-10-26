@@ -194,4 +194,114 @@ describe("read-only RPC and CKB parsing", () => {
     const result = await new ReadOnlyCkbObserver(config, { fetch: rpc.fetcher }).observeAvailable();
     expect(result.events).toHaveLength(0);
   });
+
+  test("matches a configured type script and survives cursor JSON round trips", async () => {
+    const typeScript = { code_hash: hash("f"), hash_type: "data1", args: "0xabcd" };
+    const typeConfig = validateCkbConnectorConfig({
+      ...config,
+      targetScript: {
+        role: "type",
+        script: {
+          codeHash: typeScript.code_hash,
+          hashType: typeScript.hash_type,
+          args: typeScript.args,
+        },
+      },
+    });
+    const rpc = fakeFetch({
+      0: block(0, "0"),
+      1: block(1, "1", [
+        {
+          hash: hash("b"),
+          outputs: tx("b").inner.outputs.map((output) => ({ ...output, type: typeScript })),
+          outputs_data: tx("b").inner.outputs_data,
+        },
+      ]),
+    });
+    const first = await new ReadOnlyCkbObserver(typeConfig, {
+      fetch: rpc.fetcher,
+    }).observeAvailable();
+    const restored = new ReadOnlyCkbObserver(typeConfig, {
+      fetch: rpc.fetcher,
+      cursor: JSON.parse(JSON.stringify(first.cursor)),
+    });
+    expect(first.events).toHaveLength(2);
+    expect(first.events[0]?.cell.matchedScriptRole).toBe("type");
+    expect((await restored.observeAvailable()).events).toHaveLength(0);
+  });
+
+  test("detects a replaced retained block with no matching outputs", async () => {
+    const rpc = fakeFetch({ 0: block(0, "0"), 1: block(1, "1") });
+    const first = await new ReadOnlyCkbObserver(config, { fetch: rpc.fetcher }).observeAvailable();
+    rpc.replace(1, block(1, "c"));
+    const restarted = new ReadOnlyCkbObserver(config, { fetch: rpc.fetcher, cursor: first.cursor });
+    const replacement = await restarted.observeAvailable();
+    expect(replacement.events).toHaveLength(0);
+    expect(replacement.cursor.lastProcessed?.hash).toBe(hash("c"));
+  });
+
+  test("fails closed when the earliest retained checkpoint is replaced", async () => {
+    const smallWindow = validateCkbConnectorConfig({ ...config, reorgWindow: 1 });
+    const rpc = fakeFetch({ 0: block(0, "0"), 1: block(1, "1"), 2: block(2, "2") });
+    const first = await new ReadOnlyCkbObserver(smallWindow, {
+      fetch: rpc.fetcher,
+    }).observeAvailable();
+    rpc.replace(2, block(2, "c"));
+    const restarted = new ReadOnlyCkbObserver(smallWindow, {
+      fetch: rpc.fetcher,
+      cursor: first.cursor,
+    });
+    await expect(restarted.observeAvailable()).rejects.toMatchObject({
+      code: "REORG_WINDOW_EXCEEDED",
+    });
+  });
+
+  test("does not advance the cursor on RPC failure and retries the same height", async () => {
+    const rpc = fakeFetch({ 0: block(0, "0"), 1: block(1, "1", [tx("b")]) });
+    let failBlock = true;
+    const fetcher: CkbFetch = async (input, init) => {
+      const body = JSON.parse(String(init?.body)) as { method: string; params: unknown[] };
+      if (failBlock && body.method === "get_block_by_number" && body.params[0] !== "0x0") {
+        failBlock = false;
+        throw new Error("temporary network failure");
+      }
+      return rpc.fetcher(input, init);
+    };
+    const observer = new ReadOnlyCkbObserver(config, { fetch: fetcher });
+    await expect(observer.observeAvailable()).rejects.toMatchObject({
+      code: "RPC_UNAVAILABLE",
+      retryable: true,
+    });
+    expect(observer.getCursor().lastProcessed).toBeUndefined();
+    expect((await observer.observeAvailable()).events).toHaveLength(2);
+  });
+
+  test("rejects a node with an unexpected genesis hash", async () => {
+    const rpc = fakeFetch({ 0: block(0, "f"), 1: block(1, "1") });
+    const observer = new ReadOnlyCkbObserver(config, { fetch: rpc.fetcher });
+    await expect(observer.observeAvailable()).rejects.toMatchObject({ code: "CHAIN_MISMATCH" });
+    expect(observer.getCursor().lastProcessed).toBeUndefined();
+  });
+
+  test("rejects a uint64 overflow in RPC capacity fields", async () => {
+    const malformed = tx("b");
+    const firstOutput = malformed.inner.outputs[0];
+    if (!firstOutput) throw new Error("Fixture output is missing.");
+    firstOutput.capacity = "0x10000000000000000";
+    const rpc = fakeFetch({ 0: block(0, "0"), 1: block(1, "1", [malformed]) });
+    const observer = new ReadOnlyCkbObserver(config, { fetch: rpc.fetcher });
+    await expect(observer.observeAvailable()).rejects.toMatchObject({
+      code: "RPC_INVALID_RESPONSE",
+    });
+    expect(observer.getCursor().lastProcessed).toBeUndefined();
+  });
+
+  test("emits the same deterministic event IDs for the same canonical outputs", async () => {
+    const rpc = fakeFetch({ 0: block(0, "0"), 1: block(1, "1", [tx("b")]) });
+    const first = await new ReadOnlyCkbObserver(config, { fetch: rpc.fetcher }).observeAvailable();
+    const replay = await new ReadOnlyCkbObserver(config, { fetch: rpc.fetcher }).observeAvailable();
+    expect(replay.events.map((event) => event.eventId)).toEqual(
+      first.events.map((event) => event.eventId),
+    );
+  });
 });
