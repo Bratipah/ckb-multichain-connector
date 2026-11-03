@@ -1,21 +1,5 @@
 # Architecture audit: EffectStream × Nervos CKB
 
-**Audit date:** 2026-10-24
-**EffectStream source audited:** [`effectstream/effectstream`](https://github.com/effectstream/effectstream), branch `v-next`, repository tree revision `5604043213df01beccebe253fbb479e387a514bb` (version `0.200.6`).
-**Initial workspace status:** at the time of the audit, the connector workspace contained only the audit documents and had no Git history or user changes. The separate upstream checkout was detached at the audited revision, had full (not shallow) history, and had a clean working tree.
-
-## Verified findings
-
-### Repository, stack, and licensing
-
-- The canonical repository is `https://github.com/effectstream/effectstream`; the visible default branch is `v-next`.
-- The repository is a TypeScript monorepo using Bun workspaces (`packages/**`, `e2e/**`). Its root package version at the audited revision is `0.200.6`.
-- The root and published packages declare dual licensing as `(MIT OR Apache-2.0)`; the root contains `LICENSE-MIT` and `LICENSE-APACHE`. A connector distributed independently should preserve attribution and choose a compatible license after checking the exact license texts and contribution policy.
-- Node.js 24.22.0 and npm are available in this environment. Bun is not installed, so upstream commands cannot currently be run here without installing Bun.
-- Following the official Bun installation guidance, Bun `1.4.4` was installed through the documented npm method. The upstream monorepo itself does not pin a Bun runtime in `package.json`; its package metadata requests `bun-types` `^1.3.11`, and root scripts use `bun`.
-- The EffectStream contribution guide specifies fork-and-pull-request, requires a clear description/reason and relevant test information, and documents `bun test ./packages` and serial E2E runs. No CLA or additional contribution agreement was found in the inspected guide.
-- Root test commands are `bun test ./packages` (script `test:code`) and `cd e2e && bun run runner.ts` (script `test:e2e`). The README also documents serial individual suites, for example `cd e2e && bun run runner.ts evm`.
-
 ### EffectStream integration points
 
 The upstream README describes `packages/node-sdk/sync` as the blockchain synchronization service and `packages/effectstream-sdk/config` as the config/schema package. Source inspection confirms that CKB does not currently appear in the configured chain support.
