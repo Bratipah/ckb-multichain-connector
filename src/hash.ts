@@ -12,7 +12,9 @@ export function ckbScriptHash(script: CkbScript): CkbHash {
   const args = hexToBytes(script.args);
   const hashType = ({ data: 0, type: 1, data1: 2, data2: 4 } as const)[script.hashType];
   const encodedArgs = new Uint8Array(4 + args.length);
-  new DataView(encodedArgs.buffer).setUint32(0, args.length + 4, true);
+  // Molecule Bytes is a FixVec: its prefix stores the payload byte count,
+  // excluding the four-byte prefix itself.
+  new DataView(encodedArgs.buffer).setUint32(0, args.length, true);
   encodedArgs.set(args, 4);
   const totalSize = 16 + codeHash.length + 1 + encodedArgs.length;
   const table = new Uint8Array(totalSize);
